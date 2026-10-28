@@ -28,6 +28,39 @@ covariance = gp.extras.rbf_kernel(variance=1.0, scale=0.3, r_min=1e-4, r_max=1e1
 values = gp.generate(graph, covariance, xi)
 ```
 
+### Vector-valued fields
+
+The JAX vector module uses the same `Graph` with noise and fields of shape
+`(N, m)`. Supply a callable `covariance(x, y)` returning an `(m, m)` matrix;
+it must define a positive-definite covariance with `C(x, y) = C(y, x).T`.
+Spatial dimension and component count are independent. No radial table is
+required, and the covariance can be nonstationary or nonseparable.
+
+```python
+import jax.numpy as jnp
+from graphgp.refine_vector import generate, generate_inv, generate_logdet
+
+points = jax.random.uniform(kp, (125, 3))
+graph = gp.build_graph(points, n0=8, k=4)
+component_cov = jnp.eye(3) + 0.2 * jnp.ones((3, 3))
+def covariance(x, y):
+    block = jnp.exp(-jnp.sum((x - y)**2) / 0.3**2) * component_cov
+    return block + 1e-4 * jnp.eye(3) * jnp.all(x == y)
+
+xi = jax.random.normal(kx, (len(points), 3))
+field = jax.jit(lambda z: generate(graph, covariance, z))(xi)
+xi_back = generate_inv(graph, covariance, field)
+logdet = generate_logdet(graph, covariance)
+```
+
+`logdet` is the log absolute determinant of the noise-to-field map; the implied
+field covariance has twice that log determinant. Ordinary JAX transformations
+provide the linear transpose and covariance-parameter JVP/VJP. The finite-neighbor
+graph remains a conditional approximation to the requested Gaussian process.
+Run `python demo_vector.py` for [three- and six-component examples](demo_vector.py)
+on one 3D grid, including spatially varying component correlations and an
+inverse check.
+
 ## Installation
 To install, use pip. The only dependency is JAX.
 
